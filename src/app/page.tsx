@@ -20,6 +20,7 @@ type ClaySceneProps = {
 };
 
 type ClaySceneHandle = {
+  getSnapshot: () => Float32Array | null;
   redo: () => void;
   undo: () => void;
 };
@@ -135,10 +136,12 @@ const ClayScene = forwardRef<ClaySceneHandle, ClaySceneProps>(function ClayScene
   const isFinishedRef = useRef(isFinished);
   const undoActionRef = useRef<() => void>(() => undefined);
   const redoActionRef = useRef<() => void>(() => undefined);
+  const snapshotActionRef = useRef<() => Float32Array | null>(() => null);
 
   useImperativeHandle(
     ref,
     () => ({
+      getSnapshot: () => snapshotActionRef.current(),
       redo: () => redoActionRef.current(),
       undo: () => undoActionRef.current(),
     }),
@@ -286,6 +289,7 @@ const ClayScene = forwardRef<ClaySceneHandle, ClaySceneProps>(function ClayScene
       history.undo.push(cloneGeometryState());
       applyGeometryState(next);
     };
+    snapshotActionRef.current = () => cloneGeometryState();
 
     updateHistoryAvailability();
 
@@ -578,6 +582,7 @@ const ClayScene = forwardRef<ClaySceneHandle, ClaySceneProps>(function ClayScene
       renderer.domElement.removeEventListener("wheel", onWheel);
       undoActionRef.current = () => undefined;
       redoActionRef.current = () => undefined;
+      snapshotActionRef.current = () => null;
       clayGeometry.dispose();
       clayMaterial.dispose();
       scene.traverse((object) => {
@@ -613,7 +618,7 @@ function getColorFromWheel(
   return `hsl(${angle.toFixed(0)} ${saturation.toFixed(0)}% 56%)`;
 }
 
-function WildSpace({ onBack }: { onBack: () => void }) {
+function HomeMonsterDecorations() {
   const monsters = [
     { color: "#fffdf7", delay: "0s", left: "10%", size: "120px" },
     { color: "#ffb8cf", delay: "-0.8s", left: "24%", size: "86px" },
@@ -624,30 +629,237 @@ function WildSpace({ onBack }: { onBack: () => void }) {
   ];
 
   return (
+    <div className="home-monsters" aria-hidden="true">
+      {monsters.map((monster, index) => (
+        <div
+          className="home-monster"
+          key={`${monster.color}-${index}`}
+          style={
+            {
+              "--monster-color": monster.color,
+              "--monster-delay": monster.delay,
+              "--monster-left": monster.left,
+              "--monster-size": monster.size,
+            } as React.CSSProperties
+          }
+        >
+          <span />
+          <span />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function WildSpace({
+  monsterSnapshot,
+  onBack,
+}: {
+  monsterSnapshot: Float32Array | null;
+  onBack: () => void;
+}) {
+  const mountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const mount = mountRef.current;
+
+    if (!mount) {
+      return;
+    }
+
+    const mountElement = mount;
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.Fog("#eef6ff", 16, 42);
+
+    const camera = new THREE.PerspectiveCamera(44, 1, 0.1, 100);
+    camera.position.set(7, 5.4, 8);
+    camera.lookAt(0, 0.5, 0);
+
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    mountElement.appendChild(renderer.domElement);
+
+    const geometry = createClayGeometry();
+    const position = geometry.attributes.position as THREE.BufferAttribute;
+
+    if (monsterSnapshot && monsterSnapshot.length === position.array.length) {
+      (position.array as Float32Array).set(monsterSnapshot);
+      position.needsUpdate = true;
+      geometry.computeVertexNormals();
+    }
+
+    const monster = new THREE.Mesh(
+      geometry,
+      new THREE.MeshPhysicalMaterial({
+        color: "#fffdf7",
+        roughness: 0.78,
+        clearcoat: 0.18,
+        clearcoatRoughness: 0.7,
+      }),
+    );
+    monster.scale.setScalar(0.42);
+    monster.position.y = 0.55;
+    monster.castShadow = true;
+    monster.receiveShadow = true;
+    scene.add(monster);
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(34, 34, 20, 20),
+      new THREE.MeshStandardMaterial({
+        color: "#f7fbff",
+        roughness: 0.92,
+      }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const grid = new THREE.GridHelper(34, 34, "#d7e3ef", "#e7eef6");
+    grid.position.y = 0.01;
+    scene.add(grid);
+
+    scene.add(new THREE.HemisphereLight("#ffffff", "#cbd8e6", 1.7));
+
+    const keyLight = new THREE.DirectionalLight("#ffffff", 3.2);
+    keyLight.position.set(5, 9, 5);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(2048, 2048);
+    scene.add(keyLight);
+
+    const pressedKeys = new Set<string>();
+    const velocity = new THREE.Vector3();
+    let jumpVelocity = 0;
+    let isGrounded = true;
+    let animationFrame = 0;
+    let previousTime = performance.now();
+
+    function resize() {
+      const width = mountElement.clientWidth;
+      const height = mountElement.clientHeight;
+
+      renderer.setSize(width, height);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+    }
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (
+        ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(
+          event.key,
+        )
+      ) {
+        event.preventDefault();
+      }
+
+      if (event.key === " " && isGrounded) {
+        jumpVelocity = 4.8;
+        isGrounded = false;
+        return;
+      }
+
+      pressedKeys.add(event.key);
+    }
+
+    function onKeyUp(event: KeyboardEvent) {
+      pressedKeys.delete(event.key);
+    }
+
+    function animate(time: number) {
+      const delta = Math.min((time - previousTime) / 1000, 0.04);
+      previousTime = time;
+
+      velocity.set(0, 0, 0);
+
+      if (pressedKeys.has("ArrowUp")) {
+        velocity.z -= 1;
+      }
+
+      if (pressedKeys.has("ArrowDown")) {
+        velocity.z += 1;
+      }
+
+      if (pressedKeys.has("ArrowLeft")) {
+        velocity.x -= 1;
+      }
+
+      if (pressedKeys.has("ArrowRight")) {
+        velocity.x += 1;
+      }
+
+      if (velocity.lengthSq() > 0) {
+        velocity.normalize().multiplyScalar(5.2 * delta);
+        monster.position.x = THREE.MathUtils.clamp(
+          monster.position.x + velocity.x,
+          -14,
+          14,
+        );
+        monster.position.z = THREE.MathUtils.clamp(
+          monster.position.z + velocity.z,
+          -14,
+          14,
+        );
+        monster.rotation.y = Math.atan2(velocity.x, velocity.z);
+      }
+
+      if (!isGrounded) {
+        monster.position.y += jumpVelocity * delta;
+        jumpVelocity -= 11 * delta;
+
+        if (monster.position.y <= 0.55) {
+          monster.position.y = 0.55;
+          jumpVelocity = 0;
+          isGrounded = true;
+        }
+      }
+
+      monster.scale.y = 0.42 + (isGrounded ? Math.sin(time * 0.008) * 0.015 : 0.04);
+      monster.scale.x = 0.42 - (monster.scale.y - 0.42) * 0.35;
+      monster.scale.z = monster.scale.x;
+
+      renderer.render(scene, camera);
+      animationFrame = requestAnimationFrame(animate);
+    }
+
+    resize();
+    window.addEventListener("resize", resize);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    animationFrame = requestAnimationFrame(animate);
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      geometry.dispose();
+      scene.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          object.geometry.dispose();
+
+          if (Array.isArray(object.material)) {
+            object.material.forEach((material) => material.dispose());
+          } else {
+            object.material.dispose();
+          }
+        }
+      });
+      renderer.dispose();
+      renderer.domElement.remove();
+    };
+  }, [monsterSnapshot]);
+
+  return (
     <main className="wild-screen">
       <button className="home-button" onClick={onBack} type="button">
         뒤로가기
       </button>
-      <h1 className="wild-title">야생 몬스터 놀이터</h1>
-      <div className="wild-ground" aria-label="통통 튀는 몬스터 공간">
-        {monsters.map((monster, index) => (
-          <div
-            className="wild-monster"
-            key={`${monster.color}-${index}`}
-            style={
-              {
-                "--monster-color": monster.color,
-                "--monster-delay": monster.delay,
-                "--monster-left": monster.left,
-                "--monster-size": monster.size,
-              } as React.CSSProperties
-            }
-          >
-            <span />
-            <span />
-          </div>
-        ))}
-      </div>
+      <div
+        className="wild-3d-stage"
+        ref={mountRef}
+        aria-label="내 몬스터가 움직이는 넓은 3D 야생 공간"
+      />
     </main>
   );
 }
@@ -657,6 +869,9 @@ export default function Home() {
   const [hasStarted, setHasStarted] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [isWild, setIsWild] = useState(false);
+  const [wildMonsterSnapshot, setWildMonsterSnapshot] = useState<Float32Array | null>(
+    null,
+  );
   const [sceneKey, setSceneKey] = useState(0);
   const [brushEnabled, setBrushEnabled] = useState(false);
   const [brushColor, setBrushColor] = useState(BRUSH_COLORS[0]);
@@ -674,6 +889,7 @@ export default function Home() {
     setBrushEnabled(false);
     setIsFinished(false);
     setIsWild(false);
+    setWildMonsterSnapshot(null);
     setCanRedo(false);
     setCanUndo(false);
     setHasStarted(true);
@@ -683,16 +899,23 @@ export default function Home() {
     setBrushEnabled(false);
     setIsFinished(false);
     setIsWild(false);
+    setWildMonsterSnapshot(null);
     setHasStarted(false);
   }
 
   if (isWild) {
-    return <WildSpace onBack={() => setIsWild(false)} />;
+    return (
+      <WildSpace
+        monsterSnapshot={wildMonsterSnapshot}
+        onBack={() => setIsWild(false)}
+      />
+    );
   }
 
   if (!hasStarted) {
     return (
       <main className="start-screen">
+        <HomeMonsterDecorations />
         <div className="hero-card">
           <p className="eyebrow">Monster Clay Lab</p>
           <h1>나만의 몬스터 만들기</h1>
@@ -740,7 +963,10 @@ export default function Home() {
       {isFinished ? (
         <button
           className="wild-button"
-          onClick={() => setIsWild(true)}
+          onClick={() => {
+            setWildMonsterSnapshot(claySceneRef.current?.getSnapshot() ?? null);
+            setIsWild(true);
+          }}
           type="button"
         >
           야생으로!
