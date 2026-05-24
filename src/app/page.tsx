@@ -3639,10 +3639,12 @@ function WildSpace({
     const pressedKeys = new Set<string>();
     const velocity = new THREE.Vector3();
     const joystickVector = new THREE.Vector2();
+    const cameraPointers = new Map<number, { x: number; y: number }>();
     const cameraDrag = {
-      active: false,
+      pointerId: null as number | null,
       x: 0,
       y: 0,
+      distance: 0,
     };
     let jumpVelocity = 0;
     let isGrounded = true;
@@ -3716,28 +3718,73 @@ function WildSpace({
       );
     }
 
+    function getCameraPointerGesture() {
+      const pointers = [...cameraPointers.values()];
+
+      if (pointers.length === 0) {
+        return { centerX: 0, centerY: 0, distance: 0 };
+      }
+
+      if (pointers.length === 1) {
+        return {
+          centerX: pointers[0].x,
+          centerY: pointers[0].y,
+          distance: 0,
+        };
+      }
+
+      const [first, second] = pointers;
+      return {
+        centerX: (first.x + second.x) / 2,
+        centerY: (first.y + second.y) / 2,
+        distance: Math.hypot(second.x - first.x, second.y - first.y),
+      };
+    }
+
+    function syncCameraGestureBaseline() {
+      const gesture = getCameraPointerGesture();
+      cameraDrag.x = gesture.centerX;
+      cameraDrag.y = gesture.centerY;
+      cameraDrag.distance = gesture.distance;
+      cameraDrag.pointerId = cameraPointers.keys().next().value ?? null;
+    }
+
     function onPointerDown(event: PointerEvent) {
-      cameraDrag.active = true;
-      cameraDrag.x = event.clientX;
-      cameraDrag.y = event.clientY;
+      event.preventDefault();
+      cameraPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      syncCameraGestureBaseline();
       renderer.domElement.setPointerCapture(event.pointerId);
     }
 
     function onPointerMove(event: PointerEvent) {
-      if (!cameraDrag.active) {
+      if (!cameraPointers.has(event.pointerId)) {
         return;
       }
 
-      const deltaX = event.clientX - cameraDrag.x;
-      const deltaY = event.clientY - cameraDrag.y;
+      event.preventDefault();
+      cameraPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const gesture = getCameraPointerGesture();
+      const deltaX = gesture.centerX - cameraDrag.x;
+      const deltaY = gesture.centerY - cameraDrag.y;
       cameraOrbit.yaw -= deltaX * 0.006;
       cameraOrbit.pitch += deltaY * 0.004;
-      cameraDrag.x = event.clientX;
-      cameraDrag.y = event.clientY;
+
+      if (cameraPointers.size >= 2 && cameraDrag.distance > 0) {
+        cameraOrbit.radius = THREE.MathUtils.clamp(
+          cameraOrbit.radius - (gesture.distance - cameraDrag.distance) * 0.035,
+          5,
+          34,
+        );
+      }
+
+      cameraDrag.x = gesture.centerX;
+      cameraDrag.y = gesture.centerY;
+      cameraDrag.distance = gesture.distance;
     }
 
     function onPointerUp(event: PointerEvent) {
-      cameraDrag.active = false;
+      cameraPointers.delete(event.pointerId);
+      syncCameraGestureBaseline();
 
       if (renderer.domElement.hasPointerCapture(event.pointerId)) {
         renderer.domElement.releasePointerCapture(event.pointerId);
@@ -4263,6 +4310,10 @@ function WildSpace({
       <button
         className="wild-control-jump"
         onClick={dispatchWildJump}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          dispatchWildJump();
+        }}
         type="button"
         aria-label="점프"
       >
