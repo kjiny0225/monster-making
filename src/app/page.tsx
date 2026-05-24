@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { getWildMonsterReply } from "@/lib/wildChatReplies";
 import * as THREE from "three";
 
 type ClaySceneProps = {
@@ -125,6 +126,7 @@ const FACE_EYE_DEPTH_SCALE = 0.72;
 const ROAMING_EYE_DEPTH_SCALE = 0.58;
 const ROAMING_SPEECH_DISTANCE = 14;
 const ROAMING_SPEECH_DURATION_MS = 30000;
+
 const FACE_ATTACHMENT_OFFSET = -0.018;
 const CAT_MOUTH_OFFSET = 0.118;
 const HOME_FACE_ATTACHMENT_OFFSET = 0.34;
@@ -2364,6 +2366,7 @@ function WildSpace({
   const mountRef = useRef<HTMLDivElement>(null);
   const nameTagRef = useRef<HTMLDivElement>(null);
   const speechBubbleRef = useRef<HTMLDivElement>(null);
+  const chatInputRef = useRef<HTMLInputElement>(null);
   const joystickBaseRef = useRef<HTMLDivElement>(null);
   const joystickPointerRef = useRef<number | null>(null);
   const [chatText, setChatText] = useState("");
@@ -2382,6 +2385,12 @@ function WildSpace({
 
   function dispatchWildJump() {
     window.dispatchEvent(new Event("wild-control-jump"));
+  }
+
+  function dispatchWildChat(message: string) {
+    window.dispatchEvent(
+      new CustomEvent("wild-chat-message", { detail: { message } }),
+    );
   }
 
   function updateJoystickFromPointer(event: React.PointerEvent<HTMLDivElement>) {
@@ -3602,7 +3611,11 @@ function WildSpace({
       return message;
     }
 
-    function triggerRoamingSpeech(roamingMonster: THREE.Group, time: number) {
+    function triggerRoamingSpeech(
+      roamingMonster: THREE.Group,
+      time: number,
+      message?: string,
+    ) {
       const existingSprite = roamingMonster.userData.speechSprite as
         | THREE.Sprite
         | undefined;
@@ -3610,9 +3623,48 @@ function WildSpace({
         disposeRoamingSpeechSprite(existingSprite);
       }
       roamingMonster.userData.speechSprite = createRoamingSpeechSprite(
-        takeNextRoamingSpeechMessage(),
+        message ?? takeNextRoamingSpeechMessage(),
       );
       roamingMonster.userData.speechExpiresAt = time + ROAMING_SPEECH_DURATION_MS;
+    }
+
+    function findNearestRoamingMonsterWithinSpeechDistance() {
+      let nearestMonster: THREE.Group | null = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+
+      roamingMonsters.forEach((roamingMonster) => {
+        const distance = Math.hypot(
+          roamingMonster.position.x - monster.position.x,
+          roamingMonster.position.z - monster.position.z,
+        );
+
+        if (distance <= ROAMING_SPEECH_DISTANCE && distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestMonster = roamingMonster;
+        }
+      });
+
+      return nearestMonster;
+    }
+
+    function onWildChatMessage(event: Event) {
+      const message = (event as CustomEvent<{ message?: string }>).detail?.message?.trim();
+
+      if (!message) {
+        return;
+      }
+
+      const nearestMonster = findNearestRoamingMonsterWithinSpeechDistance();
+
+      if (!nearestMonster) {
+        return;
+      }
+
+      triggerRoamingSpeech(
+        nearestMonster,
+        performance.now(),
+        getWildMonsterReply(message, monsterName || undefined),
+      );
     }
 
     scene.add(new THREE.AmbientLight("#fff6e8", 0.28 * groundLightness));
@@ -3689,7 +3741,20 @@ function WildSpace({
       isGrounded = false;
     }
 
+    function isWildChatInputFocused() {
+      const activeElement = document.activeElement;
+
+      return (
+        activeElement instanceof HTMLInputElement &&
+        activeElement.classList.contains("wild-chat-input")
+      );
+    }
+
     function onKeyDown(event: KeyboardEvent) {
+      if (isWildChatInputFocused()) {
+        return;
+      }
+
       if (
         ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(
           event.key,
@@ -4121,6 +4186,7 @@ function WildSpace({
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("wild-joystick-move", onJoystickMove);
     window.addEventListener("wild-control-jump", jumpMonster);
+    window.addEventListener("wild-chat-message", onWildChatMessage);
     window.addEventListener("wild-photo-focus", onPhotoFocus);
     window.addEventListener("wild-photo-capture", onPhotoCapture);
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
@@ -4137,6 +4203,7 @@ function WildSpace({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("wild-joystick-move", onJoystickMove);
       window.removeEventListener("wild-control-jump", jumpMonster);
+      window.removeEventListener("wild-chat-message", onWildChatMessage);
       window.removeEventListener("wild-photo-focus", onPhotoFocus);
       window.removeEventListener("wild-photo-capture", onPhotoCapture);
       renderer.domElement.removeEventListener("pointerdown", onPointerDown);
@@ -4320,11 +4387,10 @@ function WildSpace({
         점프
       </button>
       <input
+        ref={chatInputRef}
         className="wild-chat-input"
         onChange={(event) => setChatText(event.target.value)}
         onKeyDown={(event) => {
-          event.stopPropagation();
-
           if (event.nativeEvent.isComposing) {
             return;
           }
@@ -4334,6 +4400,7 @@ function WildSpace({
           }
 
           event.preventDefault();
+          event.stopPropagation();
 
           const trimmed = event.currentTarget.value.trim();
 
@@ -4343,6 +4410,8 @@ function WildSpace({
 
           setSpeechText(trimmed);
           setChatText("");
+          dispatchWildChat(trimmed);
+          chatInputRef.current?.blur();
         }}
         placeholder="몬스터에게 말 걸기"
         value={chatText}
