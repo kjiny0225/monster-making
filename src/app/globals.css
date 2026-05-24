@@ -187,6 +187,188 @@ button:disabled {
   box-shadow: 0 14px 35px rgba(57, 199, 111, 0.24);
 }
 
+.saved-monster-panel {
+  position: fixed;
+  top: 86px;
+  right: 24px;
+  z-index: 3;
+  display: grid;
+  width: auto;
+  gap: 7px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 24px;
+  box-shadow: 0 18px 55px rgba(54, 46, 40, 0.14);
+  backdrop-filter: blur(18px);
+}
+
+.saved-monster-save-button,
+.saved-monster-load-button,
+.saved-monster-item button {
+  justify-self: start;
+  min-width: auto;
+  padding: 6px 8px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #7652ff, #48b8ff);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(67, 85, 255, 0.18);
+  font-size: 0.8rem;
+  font-weight: 900;
+}
+
+.saved-monster-load-button:disabled {
+  color: rgba(95, 75, 79, 0.45);
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 0 0 2px rgba(95, 75, 79, 0.06);
+}
+
+.saved-monster-status,
+.saved-monster-empty {
+  margin: 0;
+  color: rgba(36, 29, 24, 0.72);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.load-monster-list {
+  display: grid;
+  gap: 6px;
+  max-height: min(420px, calc(100vh - 230px));
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.saved-monster-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 5px;
+  align-items: center;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+}
+
+.saved-monster-item div {
+  display: grid;
+  min-width: 0;
+}
+
+.saved-monster-item strong,
+.saved-monster-item span {
+  overflow: hidden;
+  color: rgba(36, 29, 24, 0.78);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-monster-item strong {
+  font-size: 0.86rem;
+}
+
+.saved-monster-item span {
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.saved-monster-item button:last-child {
+  color: #5f4b4f;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 0 0 2px rgba(95, 75, 79, 0.08);
+}
+
+.load-monster-dialog {
+  display: grid;
+  width: min(460px, calc(100vw - 48px));
+  gap: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.96);
+  border-radius: 26px;
+  box-shadow: 0 24px 70px rgba(54, 46, 40, 0.22);
+}
+
+.load-monster-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.load-monster-dialog h2 {
+  margin: 0;
+  color: rgba(36, 29, 24, 0.82);
+  font-size: 1.05rem;
+}
+
+.load-monster-dialog header button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  color: #5f4b4f;
+  background: rgba(255, 255, 255, 0.86);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px rgba(95, 75, 79, 0.08);
+  font-weight: 900;
+}
+
+.save-name-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(36, 29, 24, 0.18);
+  backdrop-filter: blur(6px);
+}
+
+.save-name-dialog {
+  display: grid;
+  width: min(430px, calc(100vw - 48px));
+  gap: 12px;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.96);
+  border-radius: 26px;
+  box-shadow: 0 24px 70px rgba(54, 46, 40, 0.22);
+}
+
+.save-name-dialog label {
+  color: rgba(36, 29, 24, 0.78);
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.save-name-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.save-name-row input {
+  min-width: 0;
+  padding: 13px 15px;
+  color: rgba(36, 29, 24, 0.82);
+  background: #ffffff;
+  border: 1px solid rgba(95, 75, 79, 0.12);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 2px rgba(95, 75, 79, 0.04);
+  font-weight: 900;
+  outline: none;
+}
+
+.save-name-row button {
+  padding: 0 16px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #7652ff, #48b8ff);
+  border-radius: 999px;
+  box-shadow: 0 10px 24px rgba(67, 85, 255, 0.22);
+  font-weight: 900;
+}
+
 .history-controls {
   position: fixed;
   top: 24px;
@@ -969,6 +1151,29 @@ button:disabled {
 }
 
 @media (max-width: 640px) {
+  .saved-monster-panel {
+    top: 76px;
+    right: 24px;
+    width: auto;
+    max-height: none;
+    padding: 7px;
+  }
+
+  .saved-monster-save-button,
+  .saved-monster-load-button,
+  .saved-monster-item button {
+    padding: 5px 7px;
+    font-size: 0.76rem;
+  }
+
+  .saved-monster-item {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-monster-item button:last-child {
+    grid-column: auto;
+  }
+
   .toolbar {
     width: calc(100vw - 28px);
     justify-content: center;

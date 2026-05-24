@@ -76,6 +76,15 @@ type CreatorHistorySnapshot = {
   textureDataUrl: string | null;
 };
 
+type SavedMonsterRecord = {
+  id: string;
+  monsterName: string;
+  savedAt: number;
+  snapshot: Omit<CreatorHistorySnapshot, "geometry"> & {
+    geometry: number[] | null;
+  };
+};
+
 type MonsterExpression = {
   eyes: EyeStyle;
   mouth: MouthStyle;
@@ -94,6 +103,8 @@ type MonsterSnapshot = {
   geometry: Float32Array | null;
   paintMarks: PaintMarkSnapshot[];
 };
+
+const SAVED_MONSTERS_STORAGE_KEY = "monster-clay-lab.saved-monsters.v1";
 
 const BRUSH_COLORS = [
   "#7652ff",
@@ -4423,6 +4434,7 @@ function WildSpace({
 export default function Home() {
   const claySceneRef = useRef<ClaySceneHandle>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const saveNameInputRef = useRef<HTMLInputElement>(null);
   const [hasStarted, setHasStarted] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [isWild, setIsWild] = useState(false);
@@ -4465,6 +4477,11 @@ export default function Home() {
   });
   const [particleStyle, setParticleStyle] = useState<ParticleStyle>("none");
   const [particleColorVariance, setParticleColorVariance] = useState(0.35);
+  const [savedMonsters, setSavedMonsters] = useState<SavedMonsterRecord[]>([]);
+  const [loadDialogOpen, setLoadDialogOpen] = useState(false);
+  const [saveNameDraft, setSaveNameDraft] = useState("");
+  const [saveNameDialogOpen, setSaveNameDialogOpen] = useState(false);
+  const [saveStatusText, setSaveStatusText] = useState("");
   const creatorRedoStackRef = useRef<CreatorHistorySnapshot[]>([]);
   const creatorUndoStackRef = useRef<CreatorHistorySnapshot[]>([]);
   const [, setCreatorHistoryVersion] = useState(0);
@@ -4477,6 +4494,46 @@ export default function Home() {
     materialType,
     textureDataUrl,
   };
+
+  useEffect(() => {
+    try {
+      const rawSavedMonsters = localStorage.getItem(SAVED_MONSTERS_STORAGE_KEY);
+
+      if (!rawSavedMonsters) {
+        return;
+      }
+
+      const parsed = JSON.parse(rawSavedMonsters) as SavedMonsterRecord[];
+
+      if (Array.isArray(parsed)) {
+        setSavedMonsters(parsed);
+      }
+    } catch {
+      setSaveStatusText("저장 목록을 불러오지 못했어요.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!saveNameDialogOpen) {
+      return;
+    }
+
+    saveNameInputRef.current?.focus();
+    saveNameInputRef.current?.select();
+  }, [saveNameDialogOpen]);
+
+  function persistSavedMonsters(nextSavedMonsters: SavedMonsterRecord[]) {
+    setSavedMonsters(nextSavedMonsters);
+
+    try {
+      localStorage.setItem(
+        SAVED_MONSTERS_STORAGE_KEY,
+        JSON.stringify(nextSavedMonsters),
+      );
+    } catch {
+      setSaveStatusText("저장 공간이 부족해서 저장하지 못했어요.");
+    }
+  }
 
   function captureCreatorHistorySnapshot(): CreatorHistorySnapshot {
     const claySnapshot = claySceneRef.current?.getSnapshot();
@@ -4509,6 +4566,85 @@ export default function Home() {
       sculptMode,
       textureDataUrl,
     };
+  }
+
+  function serializeCreatorSnapshot(
+    snapshot: CreatorHistorySnapshot,
+  ): SavedMonsterRecord["snapshot"] {
+    return {
+      ...snapshot,
+      brushWheelPoint: { ...snapshot.brushWheelPoint },
+      expression: { ...snapshot.expression },
+      eyeWheelPoint: { ...snapshot.eyeWheelPoint },
+      geometry: snapshot.geometry ? Array.from(snapshot.geometry) : null,
+      materialWheelPoint: { ...snapshot.materialWheelPoint },
+      mouthWheelPoint: { ...snapshot.mouthWheelPoint },
+      paintMarks: snapshot.paintMarks.map((mark) => ({ ...mark })),
+    };
+  }
+
+  function deserializeCreatorSnapshot(
+    snapshot: SavedMonsterRecord["snapshot"],
+  ): CreatorHistorySnapshot {
+    return {
+      ...snapshot,
+      brushWheelPoint: { ...snapshot.brushWheelPoint },
+      expression: { ...snapshot.expression },
+      eyeWheelPoint: { ...snapshot.eyeWheelPoint },
+      geometry: snapshot.geometry ? new Float32Array(snapshot.geometry) : null,
+      materialWheelPoint: { ...snapshot.materialWheelPoint },
+      mouthWheelPoint: { ...snapshot.mouthWheelPoint },
+      paintMarks: snapshot.paintMarks.map((mark) => ({ ...mark })),
+    };
+  }
+
+  function openSaveNameDialog() {
+    setSaveNameDraft(monsterName.trim() || "이름 없는 몬스터");
+    setSaveNameDialogOpen(true);
+  }
+
+  function closeSaveNameDialog() {
+    setSaveNameDialogOpen(false);
+    setSaveNameDraft("");
+  }
+
+  function saveCurrentMonster(savedName: string) {
+    const snapshot = captureCreatorHistorySnapshot();
+    const savedAt = Date.now();
+    const nextMonsterName = savedName.trim() || "이름 없는 몬스터";
+    const nextRecord: SavedMonsterRecord = {
+      id: `${savedAt}-${Math.random().toString(36).slice(2)}`,
+      monsterName: nextMonsterName,
+      savedAt,
+      snapshot: serializeCreatorSnapshot(snapshot),
+    };
+    const nextSavedMonsters = [nextRecord, ...savedMonsters].slice(0, 12);
+
+    persistSavedMonsters(nextSavedMonsters);
+    setMonsterName(nextMonsterName);
+    closeSaveNameDialog();
+    setSaveStatusText(`${nextMonsterName} 저장했어요.`);
+  }
+
+  function loadSavedMonster(savedMonster: SavedMonsterRecord) {
+    pushCreatorHistory();
+    setMonsterName(savedMonster.monsterName);
+    setWildMonsterSnapshot(null);
+    applyCreatorHistorySnapshot(deserializeCreatorSnapshot(savedMonster.snapshot));
+    setIsFinished(false);
+    setLoadDialogOpen(false);
+    setSaveStatusText(`${savedMonster.monsterName} 불러왔어요.`);
+  }
+
+  function deleteSavedMonster(savedMonsterId: string) {
+    const nextSavedMonsters = savedMonsters.filter(
+      (savedMonster) => savedMonster.id !== savedMonsterId,
+    );
+    persistSavedMonsters(nextSavedMonsters);
+    if (nextSavedMonsters.length === 0) {
+      setLoadDialogOpen(false);
+    }
+    setSaveStatusText("저장한 몬스터를 삭제했어요.");
   }
 
   function applyCreatorHistorySnapshot(snapshot: CreatorHistorySnapshot) {
@@ -4770,6 +4906,122 @@ export default function Home() {
         >
           완성!
         </button>
+      ) : null}
+
+      {!isFinished ? (
+        <section className="saved-monster-panel" aria-label="몬스터 저장과 불러오기">
+          <button
+            className="saved-monster-save-button"
+            onClick={openSaveNameDialog}
+            type="button"
+          >
+            저장하기
+          </button>
+          <button
+            className="saved-monster-load-button"
+            disabled={savedMonsters.length === 0}
+            onClick={() => setLoadDialogOpen(true)}
+            type="button"
+          >
+            불러오기
+          </button>
+        </section>
+      ) : null}
+
+      {loadDialogOpen ? (
+        <div
+          className="save-name-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setLoadDialogOpen(false);
+            }
+          }}
+        >
+          <section
+            className="load-monster-dialog"
+            aria-label="저장한 몬스터 불러오기"
+          >
+            <header>
+              <h2>불러오기</h2>
+              <button
+                aria-label="불러오기 창 닫기"
+                onClick={() => setLoadDialogOpen(false)}
+                type="button"
+              >
+                x
+              </button>
+            </header>
+            <div className="load-monster-list">
+              {savedMonsters.map((savedMonster) => (
+                <article className="saved-monster-item" key={savedMonster.id}>
+                  <div>
+                    <strong>{savedMonster.monsterName}</strong>
+                    <span>
+                      {new Date(savedMonster.savedAt).toLocaleDateString("ko-KR", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => loadSavedMonster(savedMonster)}
+                    type="button"
+                  >
+                    불러오기
+                  </button>
+                  <button
+                    aria-label={`${savedMonster.monsterName} 삭제`}
+                    onClick={() => deleteSavedMonster(savedMonster.id)}
+                    type="button"
+                  >
+                    삭제
+                  </button>
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {saveNameDialogOpen ? (
+        <div
+          className="save-name-dialog-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closeSaveNameDialog();
+            }
+          }}
+        >
+          <form
+            className="save-name-dialog"
+            onSubmit={(event) => {
+              event.preventDefault();
+              saveCurrentMonster(saveNameDraft);
+            }}
+          >
+            <label htmlFor="save-monster-name">저장할 이름</label>
+            <div className="save-name-row">
+              <input
+                ref={saveNameInputRef}
+                id="save-monster-name"
+                maxLength={24}
+                onChange={(event) => setSaveNameDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    closeSaveNameDialog();
+                  }
+                }}
+                placeholder="몬스터 이름"
+                value={saveNameDraft}
+              />
+              <button type="submit">저장</button>
+            </div>
+          </form>
+        </div>
       ) : null}
 
       {isFinished ? (
